@@ -11,10 +11,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import unicode_literals
 
-
+from mo_logs import Log
 from mo_testing.fuzzytestcase import FuzzyTestCase
 
-from yay import Characters, Literal, parse, Or, letters, OneOrMore, Word, Concat, White
+from yay import Characters, Literal, parse, Or, letters, OneOrMore, Word, Concat, Whitespace, Forward
 
 
 class Test_YAY(FuzzyTestCase):
@@ -50,7 +50,7 @@ class Test_YAY(FuzzyTestCase):
         self.assertRaises(Exception, parse, pattern, "error")
 
     def test_concat(self):
-        pattern = Concat([Literal("("), ("word", Word(letters)), Literal(")")])
+        pattern = Concat([Literal("("), {"word": Word(letters)}, Literal(")")])
 
         result = parse(pattern, "(hello)")
         self.assertEqual(
@@ -64,11 +64,11 @@ class Test_YAY(FuzzyTestCase):
 
     def test_whitespace(self):
         pattern = Concat([
-            ("first", Word(letters)),
-            ("rest", OneOrMore(Concat([
-                White(),
-                ("word", Word(letters))
-            ])))
+            {"first": Word(letters)},
+            {"rest": OneOrMore(Concat([
+                Whitespace(),
+                {"word": Word(letters)}
+            ]))}
         ])
         #                        01234567890123
         result = parse(pattern, "this is a test")
@@ -85,3 +85,13 @@ class Test_YAY(FuzzyTestCase):
                 }}
             ]
         )
+
+
+    def test_operators(self):
+
+        expr = Forward()
+        sample = Or([
+            Concat([{"left": expr}, Whitespace, {"op": Literal("*")}, Whitespace, {"right": expr}]),
+            Concat([{"left": expr}, Whitespace, {"op": Literal("+")}, Whitespace, {"right": expr}]),
+        ])
+        Log.error("incomplete")

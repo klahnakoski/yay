@@ -11,6 +11,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import unicode_literals
 
+from collections import Mapping
+
 from mo_dots import Null
 from mo_logs import Log
 
@@ -161,6 +163,21 @@ class OneOrMoreParser(Parser):
         return total_matches, next_parsers
 
 
+class Forward(Pattern):
+
+    def __init__(self):
+        self.sub_pattern = Null
+
+    def __lshift__(self, sub_pattern):
+        if self.sub_pattern:
+            Log.error("expecting assignment to Forward pattern just once")
+        else:
+            self.sub_pattern=sub_pattern
+
+    def parser(self, start_pos):
+        return self.sub_pattern.parser(start_pos)
+
+
 class Or(Pattern):
     def __init__(self, sub_patterns):
         Pattern.__init__(self)
@@ -200,16 +217,21 @@ class Word(Pattern):
         return OneOrMore(Characters(self.characters)).parser(start_pos)
 
 
-class White(Pattern):
+class _Whitespace(Pattern):
     def __init__(self):
         Pattern.__init__(self)
         pass
 
     def parser(self, start_pos):
-        return WhiteParser(start_pos)
+        return WhitespaceParser(start_pos)
+
+    def __call__(self, *args, **kwargs):
+        return self
+
+Whitespace = _Whitespace()
 
 
-class WhiteParser(Parser):
+class WhitespaceParser(Parser):
     """
     CONSUME ZERO, OR MORE WHITESPACE CHARACTERS
     """
@@ -230,10 +252,19 @@ class Concat(Pattern):
 
     def __init__(self, sub_patterns):
         """
-        :param sub_patterns: LIST OF (name, pattern) PAIRS; name==None FOR NO NAME
+        :param sub_patterns: LIST OF {name: pattern} PAIRS; name==None FOR NO NAME
         """
+        def parse_pair(p):
+            if isinstance(p, Mapping):
+                return p.items()[0]
+            elif isinstance(p, Pattern):
+                return (None, p)
+            else:
+                Log.error("Expecting pattern, or dict like {'name': pattern}")
+
+
         Pattern.__init__(self)
-        temp = [p if isinstance(p, tuple) else (Null, p) for p in sub_patterns]
+        temp = [parse_pair(p) for p in sub_patterns]
         self.names, self.sub_patterns = zip(*temp)
 
     def parser(self, start_pos):

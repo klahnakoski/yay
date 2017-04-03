@@ -140,20 +140,23 @@ class OneOrMoreParser(Parser):
     def consume(self, character):
         self.stop_pos += 1
         total_matches = []
+        next_sub_parsers = []
         next_parsers = []
 
         for p in self.sub_parser:
             matches, new_parsers = p.consume(character)
+            next_sub_parsers.extend(new_parsers)
 
             for match in matches:
                 data = self.prefix_data + [match.data]
                 total_matches.append(Match(self.start_pos, self.stop_pos, data))
-                next_parser = OneOrMoreParser(self.pattern, self.start_pos, self.stop_pos, data)
+                next_parser = OneOrMoreParser(self.pattern, self.stop_pos, self.stop_pos, data)
+                next_parser.start_pos=self.start_pos
                 next_parsers.append(next_parser)
 
-            if new_parsers:
-                self.sub_parser = new_parsers
-                next_parsers.append(self)
+        if next_sub_parsers:
+            self.sub_parser = next_sub_parsers
+            next_parsers.append(self)
 
         return total_matches, next_parsers
 

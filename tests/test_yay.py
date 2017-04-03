@@ -70,17 +70,18 @@ class Test_YAY(FuzzyTestCase):
                 ("word", Word(letters))
             ])))
         ])
+        #                        01234567890123
         result = parse(pattern, "this is a test")
         self.assertEqual(
             result,
             [
-                {"start": 0, "stop": 14, "data":{
+                {"start": 0, "stop": 14, "data": {
                     "first": {"start": 0, "stop": 4, "data": ["t", "h", "i", "s"]},
-                    "rest":[
-                        {"start": 6, "stop": 8, "data": ["i", "s"]},
-                        {"start": 9, "stop": 10, "data": ["a"]},
-                        {"start": 11, "stop": 15, "data": ["t", "e", "s", "t"]},
-                    ]
+                    "rest": {"start": 4, "stop": 14, "data": [
+                        {"word": {"start": 5, "stop": 7, "data": ["i", "s"]}},
+                        {"word": {"start": 8, "stop": 9, "data": ["a"]}},
+                        {"word": {"start": 10, "stop": 14, "data": ["t", "e", "s", "t"]}},
+                    ]}
                 }}
             ]
         )

@@ -11,56 +11,72 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import unicode_literals
 
-from mo_logs import Log
+from unittest import skip
+
 from mo_testing.fuzzytestcase import FuzzyTestCase
 
-from yay import Characters, Literal, parse, Or, letters, OneOrMore, Word, Concat, Whitespace, Forward
+from yay import Characters, Literal, parse, Or, letters, OneOrMore, Word, Concat, Whitespace, Forward, digits
 
 
 class Test_YAY(FuzzyTestCase):
 
-
     def test_one_char(self):
         pattern = Literal("a")
         result = parse(pattern, "a")
-        self.assertEqual(result, [{"start": 0, "stop": 1, "data": "a"}])
+        self.assertEqual(result, [{"start": 0, "stop": 1, "literal": "a"}])
 
     def test_literal(self):
         pattern = Literal("hello world")
         result = parse(pattern, "hello world")
-        self.assertEqual(result, [{"start": 0, "stop": 11, "data": "hello world"}])
+        self.assertEqual(result, [{"start": 0, "stop": 11, "literal": "hello world"}])
+
+    def test_characters(self):
+        pattern = Characters(letters)
+        result = parse(pattern, "H")
+        self.assertEqual(
+            result,
+            [{"start": 0, "stop": 1, "data": "H"}]
+        )
 
     def test_one_word(self):
         pattern = OneOrMore(Characters(letters))
         result = parse(pattern, "HelloWorld")
         self.assertEqual(
             result,
-            [{"start": 0, "stop": 10, "data": ["H", "e", "l", "l", "o", "W", "o", "r", "l", "d"]}]
+            [{
+                "start": 0,
+                "stop": 10,
+                "sequence": [{"data": d} for d in "HelloWorld"]
+            }]
+        )
+
+    def test_concat(self):
+        pattern = Concat([Literal("("), Literal(")")])
+
+        result = parse(pattern, "()")
+        self.assertEqual(result, [{"start": 0, "stop": 2, "sequence": [{"literal": "("}, {"literal": ")"}]}])
+
+    def test_concat_w_name(self):
+        pattern = Concat([Literal("("), {"word": Word(letters)}, Literal(")")])
+
+        result = parse(pattern, "(hello)")
+        self.assertEqual(
+            result,
+            [{
+                "start": 0,
+                "stop": 7,
+                "data": {"word": {"sequence": [{"data": w} for w in "hello"]}}
+            }]
         )
 
     def test_or(self):
         pattern = Or([Literal("test"), Literal("stinker")])
 
         result = parse(pattern, "test")
-        self.assertEqual(result, [{"start": 0, "stop": 4, "data": "test"}])
+        self.assertEqual(result, [{"start": 0, "stop": 4, "literal": "test"}])
 
         result = parse(pattern, "stinker")
-        self.assertEqual(result, [{"start": 0, "stop": 7, "data": "stinker"}])
-
-        self.assertRaises(Exception, parse, pattern, "error")
-
-    def test_concat(self):
-        pattern = Concat([Literal("("), {"word": Word(letters)}, Literal(")")])
-
-        result = parse(pattern, "(hello)")
-        self.assertEqual(
-            result,
-            [
-                {"start": 0, "stop": 7, "data":
-                    {"word": {"start": 1, "stop": 6, "data": ["h", "e", "l", "l", "o"]}}
-                }
-            ]
-        )
+        self.assertEqual(result, [{"start": 0, "stop": 7, "literal": "stinker"}])
 
     def test_whitespace(self):
         pattern = Concat([
@@ -76,22 +92,26 @@ class Test_YAY(FuzzyTestCase):
             result,
             [
                 {"start": 0, "stop": 14, "data": {
-                    "first": {"start": 0, "stop": 4, "data": ["t", "h", "i", "s"]},
-                    "rest": {"start": 4, "stop": 14, "data": [
-                        {"word": {"start": 5, "stop": 7, "data": ["i", "s"]}},
-                        {"word": {"start": 8, "stop": 9, "data": ["a"]}},
-                        {"word": {"start": 10, "stop": 14, "data": ["t", "e", "s", "t"]}},
+                    "first": {"start": 0, "stop": 4, "sequence": [{"data": w} for w in "this"]},
+                    "rest": {"sequence": [
+                        {"data": {"word": {"sequence": [{"data": w} for w in "is"]}}},
+                        {"data": {"word": {"sequence": [{"data": w} for w in "a"]}}},
+                        {"data": {"word": {"sequence": [{"data": w} for w in "test"]}}},
                     ]}
                 }}
             ]
         )
 
-
+    @skip("not ready")
     def test_operators(self):
-
         expr = Forward()
         sample = Or([
+            OneOrMore(Characters(digits)),
             Concat([{"left": expr}, Whitespace, {"op": Literal("*")}, Whitespace, {"right": expr}]),
             Concat([{"left": expr}, Whitespace, {"op": Literal("+")}, Whitespace, {"right": expr}]),
         ])
-        Log.error("incomplete")
+        expr << sample
+
+        result = parse(expr, "25+34*3")
+        expected = {"left": "25", "right": {"left": "34", "right": "3"}}
+        self.assertEqual(result, expected)

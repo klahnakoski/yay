@@ -102,16 +102,27 @@ class Test_YAY(FuzzyTestCase):
             ]
         )
 
-    @skip("not ready")
+    def test_forward(self):
+        expr = Forward()
+        sample = Or([
+            OneOrMore(Characters(digits)),
+            Concat([{"left": expr}, Whitespace(), {"op": Literal("+")}, Whitespace(), {"right": expr}]),
+        ])
+        expr << sample
+
+        result = parse(expr, "2+4")
+        expected = {"left": "2", "right": "4"}
+        self.assertEqual(result, expected)
+
     def test_operators(self):
         expr = Forward()
         sample = Or([
             OneOrMore(Characters(digits)),
-            Concat([{"left": expr}, Whitespace, {"op": Literal("*")}, Whitespace, {"right": expr}]),
-            Concat([{"left": expr}, Whitespace, {"op": Literal("+")}, Whitespace, {"right": expr}]),
+            Concat([{"left": expr}, Whitespace(), {"op": Literal("*")}, Whitespace(), {"right": expr}]),
+            Concat([{"left": expr}, Whitespace(), {"op": Literal("+")}, Whitespace(), {"right": expr}]),
         ])
         expr << sample
 
-        result = parse(expr, "25+34*3")
-        expected = {"left": "25", "right": {"left": "34", "right": "3"}}
+        result = parse(expr, "2+4*3")
+        expected = {"left": "2", "right": {"left": "4", "right": "3"}}
         self.assertEqual(result, expected)

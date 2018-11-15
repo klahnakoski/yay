@@ -184,6 +184,7 @@ class CharactersParser(Parser):
         else:
             return Null, Null
 
+
 class CharacterMatch(Match):
     def __init__(self, pattern, character, position):
         Match.__init__(self, pattern)
@@ -205,6 +206,10 @@ class CharacterMatch(Match):
             "data": self.character
         }
 
+    @property
+    def right_token(self):
+        return None
+
 
 class OneOrMore(Pattern):
     def __init__(self, sub_pattern):
@@ -213,7 +218,7 @@ class OneOrMore(Pattern):
 
     def parser(self, lhs, character):
 
-        tail = self.sub_pattern.parser([], character)
+        tail = self.sub_pattern.parser(None, character)
         if not tail:
             return []
 
@@ -268,7 +273,6 @@ class OneOrMoreMatch(Match):
             "sequence": [d.__data__() for d in self.sequence]
         }
 
-
     @property
     def start(self):
         return self.sequence[0].start
@@ -276,6 +280,10 @@ class OneOrMoreMatch(Match):
     @property
     def stop(self):
         return self.sequence[-1].stop
+
+    @property
+    def right_token(self):
+        return self.sequence[-1]
 
 
 class Concat(Pattern):
@@ -296,16 +304,16 @@ class Concat(Pattern):
 
     def parser(self, lhs, character):
         acc = []
-        first_pattern = self.sub_patterns[0].parser(lhs, character)
+        first_patterns = self.sub_patterns[0].parser(lhs, character)
 
         if not lhs:
-            return [ConcatParser(self, [], 0, f) for f in first_pattern]
+            return [ConcatParser(self, [], 0, f) for f in first_patterns]
 
         parent_token = Null
         right_token = lhs
         while right_token:
             if parent_token.pattern.accept_rhs(self):
-                acc.extend(first_pattern.parser(right_token, character))
+                acc.extend(first_patterns.parser(right_token, character))
             right_token = right_token.right_token
         return acc
 
@@ -395,6 +403,10 @@ class ConcatMatch(Match):
     def stop(self):
         return self.sequence[-1].stop
 
+    @property
+    def right_token(self):
+        return self.sequence[-1]
+
 
 class Or(Pattern):
     def __init__(self, sub_patterns):
@@ -405,13 +417,14 @@ class Or(Pattern):
         if not lhs:
             return [OrParser(self, [s for p in self.sub_patterns for s in p.parser(lhs, character)])]
 
-        acc = []
-        right_token = lhs
-        while right_token:
-            for p in self.sub_patterns:
-                acc.extend(p.parser(right_token, character))
-            right_token = right_token.right_token
-        return acc
+        if lhs.pattern != self:
+            return []
+
+        rhs = lhs.right_token
+        candidates = []
+        for p in self.sub_patterns:
+            candidates.extend(p.parser(rhs, character))
+        return [OrParser(self, candidates)]
 
     def accept_rhs(self, rhs):
         return any(p.accept_rhs(rhs) for p in self.sub_patterns)
@@ -431,40 +444,121 @@ class OrParser(Parser):
         next_parsers = []
         for p in self.sub_parsers:
             matches, new_parsers = p.consume(character, position)
-            total_matches.extend(matches)
-            next_parsers.extend(new_parsers)
+            total_matches.extend(OrMatch(self.pattern, m) for m in matches)
+            next_parsers.extend(OrParser(self.pattern, [p]) for p in new_parsers)
 
-        # ONCE WE HAVE A CHARACTER, WE CAN SAFELY REMOVE THIS PARSER
         return total_matches, next_parsers
+
+
+class OrMatch(Match):
+
+    def __init__(self, pattern, sub_match):
+        Match.__init__(self, pattern)
+        self.sub_match = sub_match
+
+
+    @property
+    def start(self):
+        return self.sub_match.start
+
+    @property
+    def stop(self):
+        return self.sub_match.stop
+
+    @property
+    def right_token(self):
+        return self.sub_match
 
 
 class Forward(Pattern):
 
     def __init__(self):
+        Pattern.__init__(self, ForwardParser)
         self.sub_pattern = Null
+        self.in_use = False
 
     def __lshift__(self, sub_pattern):
         if self.sub_pattern:
             Log.error("expecting assignment to Forward pattern just once")
         else:
-            self.sub_pattern=sub_pattern
+            self.sub_pattern = sub_pattern
 
     def parser(self, lhs, character):
-        return self.sub_pattern.parser()
 
+        acc = []
+        right_token = lhs
+        while right_token:
+            if right_token.pattern == self:
+                acc.extend(self.sub_pattern.parser(right_token.right_token, character))
+            right_token = right_token.right_token
+
+        if self.in_use:
+            return [ForwardParser(self)]
+
+        with self:
+            return [ForwardParser(self, p) for p in self.sub_pattern.parser(lhs, character)]
+
+    def __enter__(self):
+        if self.in_use:
+            Log.error("not allowed")
+        self.in_use = True
+
+    def __exit__(self, a, b, c):
+        self.in_use = False
+
+
+class ForwardParser(Parser):
+
+    def __init__(self, pattern, sub_parser=None, matches=None):
+        Parser.__init__(self, pattern)
+        self.sub_parser = sub_parser
+        self.sub_matches = matches or []
+
+    def consume(self, character, position):
+        if self.sub_parser is None:
+            return Null, Null
+
+        new_sub_parsers = [self.sub_parser]
+        for m in self.sub_matches:
+            new_sub_parsers.extend(self.pattern.sub_pattern.parser(m, character))
+
+        new_matches = []
+        new_parsers = []
+        for s in new_sub_parsers:
+            m, p = s.consume(character, position)
+            new_matches.extend(ForwardMatch(self.pattern, mm) for mm in m)
+            new_parsers.extend(ForwardParser(self.pattern, pp, m) for pp in p)
+
+        return new_matches, new_parsers
+
+
+class ForwardMatch(Match):
+
+    def __init__(self, pattern, sub_match):
+        Match.__init__(self, pattern)
+        self.sub_match = sub_match
+
+    @property
+    def start(self):
+        return self.sub_match.start
+
+    @property
+    def stop(self):
+        return self.sub_match.stop
+
+    @property
+    def right_token(self):
+        return self.sub_match
 
 
 
 # SOME SHORTCUTS
-
 def Word(characters):
     return OneOrMore(Characters(characters))
 
 
 def Whitespace():
     return OneOrMore(Characters(whitespace))
-
-
 
 
 def parse(pattern, data):

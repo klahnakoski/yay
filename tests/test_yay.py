@@ -11,8 +11,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import unicode_literals
 
-from unittest import skip
-
+from mo_dots import wrap
 from mo_json import value2json
 from mo_testing.fuzzytestcase import FuzzyTestCase
 
@@ -167,6 +166,16 @@ class Test_YAY(FuzzyTestCase):
         ])
         expr << sample
 
-        result = parse(expr, "2 + 4 * 3")
-        expected = {"left": "2", "right": {"left": "4", "right": "3"}}
-        self.assertEqual(result, expected)
+        result = wrap(parse(expr, "2 + 4 * 3"))
+
+        self.assertEqual(result[0].data.left.sequence[0].data, "2")
+        self.assertEqual(result[0].data.op.literal, "+")
+        self.assertEqual(result[0].data.right.data.left.sequence[0].data, "4")
+        self.assertEqual(result[0].data.right.data.op.literal, "*")
+        self.assertEqual(result[0].data.right.data.right.sequence[0].data, "3")
+
+        self.assertEqual(result[1].data.left.data.left.sequence[0].data, "2")
+        self.assertEqual(result[1].data.left.data.op.literal, "+")
+        self.assertEqual(result[1].data.left.data.right.sequence[0].data, "4")
+        self.assertEqual(result[1].data.op.literal, "*")
+        self.assertEqual(result[1].data.right.sequence[0].data, "3")

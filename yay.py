@@ -40,6 +40,7 @@ class Pattern(object):
     def __init__(self, parser):
         self._parser = parser
         self.parse_actions = []
+        self.post = lambda x: x
 
     def consume(self, character):
         """
@@ -70,6 +71,14 @@ class Pattern(object):
         :return:
         """
         return self._parser(self, position)
+
+    def post_process(self, func):
+        """
+        :param function: ACCEPTS A Match AND RETURNS SOME OTHER JSON-IZABLE OBJECT
+        :return: self FOR CHAINING
+        """
+        self.post = func
+        return self
 
     def accept_rhs(self, rhs):
         return self == rhs
@@ -392,7 +401,7 @@ class ConcatMatch(Match):
         self.sequence = sequence
 
     def __data__(self):
-        seq = [s.__data__() for s in self.sequence]
+        seq = [s.__data__() for s in self.sequence if s is not None]
         return {
             "start": self.sequence[0].start,
             "stop": self.sequence[-1].stop,
@@ -400,7 +409,7 @@ class ConcatMatch(Match):
             "data": {
                 n: s
                 for n, s in zip(self.patterns[0].names, seq)
-                if n is not None
+                if n is not None and s is not None
             }
         }
 
@@ -542,13 +551,20 @@ class ForwardParser(Parser):
             return new_matches, new_parsers
 
 
+def text(match):
+    return "".join(m.character for m in match.sequence)
+
+def ignore(match):
+    return None
+
+
 # SOME SHORTCUTS
 def Word(characters):
-    return OneOrMore(Characters(characters))
+    return OneOrMore(Characters(characters)).post_process(text)
 
 
 def Whitespace():
-    return OneOrMore(Characters(whitespace))
+    return OneOrMore(Characters(whitespace)).post_process(ignore)
 
 
 def parse(pattern, data):

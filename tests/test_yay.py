@@ -16,7 +16,7 @@ from unittest import skip
 from mo_json import value2json
 from mo_testing.fuzzytestcase import FuzzyTestCase
 
-from yay import Characters, Literal, parse, Or, letters, OneOrMore, Word, Concat, Whitespace, Forward, digits
+from yay import Characters, Literal, parse, Or, letters, OneOrMore, Word, Concat, Whitespace, Forward, digits, text
 
 
 class Test_YAY(FuzzyTestCase):
@@ -161,7 +161,7 @@ class Test_YAY(FuzzyTestCase):
     def test_operators(self):
         expr = Forward()
         sample = Or([
-            OneOrMore(Characters(digits)),
+            OneOrMore(Characters(digits)).post_process(text),
             Concat([{"left": expr}, Whitespace(), {"op": Literal("*")}, Whitespace(), {"right": expr}]),
             Concat([{"left": expr}, Whitespace(), {"op": Literal("+")}, Whitespace(), {"right": expr}]),
         ])

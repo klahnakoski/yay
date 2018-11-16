@@ -56,20 +56,20 @@ class Pattern(object):
             match = a(match)
         return match
 
-    def parser(self, lhs, character):
+    def parser(self, lhs, character, position):
         """
-        :param lhs:
+        :param lhs: CUURENT PARSE TREE
         :param character: NOT CONSUMED, JUST A HELPFUL TO DETERMINE IF A PARSER SHOULD BE RETURNED
         :return:
         """
         raise NotImplementedError()
 
-    def new_parser(self):
+    def new_parser(self, position):
         """
         RETURN A NEW PARSER WITH ALL THE EXPECTATIONS IT HAS
         :return:
         """
-        return self._parser(self)
+        return self._parser(self, position)
 
     def accept_rhs(self, rhs):
         return self == rhs
@@ -80,8 +80,9 @@ class Pattern(object):
 
 class Parser(object):
 
-    def __init__(self, pattern):
-        self.pattern=pattern
+    def __init__(self, pattern, start_pos):
+        self.start = start_pos
+        self.pattern = pattern
 
     def __str__(self):
         return text_type(self).encode('utf8')
@@ -90,7 +91,10 @@ class Parser(object):
 class Match(object):
 
     def __init__(self, pattern):
-        self.pattern=pattern
+        self.patterns = [pattern]
+
+    def __str__(self):
+        raise NotImplementedError()
 
 
 class Literal(Pattern):
@@ -108,9 +112,9 @@ class Literal(Pattern):
     def __eq__(self, other):
         return isinstance(other, Literal) and self.value == other.value
 
-    def parser(self, lhs, character):
+    def parser(self, lhs, character, position):
         if not lhs and self.value[0] == character:
-            return [LiteralParser(self)]
+            return [LiteralParser(self, position)]
         else:
             return []
 
@@ -119,8 +123,8 @@ class Literal(Pattern):
 
 
 class LiteralParser(Parser):
-    def __init__(self, pattern, index=0):
-        Parser.__init__(self, pattern)
+    def __init__(self, pattern, start_pos, index=0):
+        Parser.__init__(self, pattern, start_pos)
         self.index = index
         self.start_pos = -1
 
@@ -149,8 +153,11 @@ class LiteralMatch(Match):
         return {
             "start": self.start,
             "stop": self.stop,
-            "literal": self.pattern.value
+            "literal": self.patterns[0].value
         }
+
+    def __str__(self):
+        return str(self.patterns[0].value)
 
 
 class Characters(Pattern):
@@ -162,19 +169,18 @@ class Characters(Pattern):
         Pattern.__init__(self, CharactersParser)
         self.allowed_chars = allowed_chars
 
-    def parser(self, lhs, character):
+    def parser(self, lhs, character, position):
         if not lhs and character in self.allowed_chars:
-            return [CharactersParser(self)]
+            return [CharactersParser(self, position)]
         return []
-
 
 
 NO_CHAR = unichr(0)
 
 
 class CharactersParser(Parser):
-    def __init__(self, pattern):
-        Parser.__init__(self, pattern)
+    def __init__(self, pattern, start_pos):
+        Parser.__init__(self, pattern, start_pos)
         self.character = NO_CHAR
         self.position = -1
 
@@ -210,35 +216,38 @@ class CharacterMatch(Match):
     def right_token(self):
         return None
 
+    def __str__(self):
+        return self.character
+
 
 class OneOrMore(Pattern):
     def __init__(self, sub_pattern):
         Pattern.__init__(self, OneOrMoreParser)
         self.sub_pattern = sub_pattern
 
-    def parser(self, lhs, character):
+    def parser(self, lhs, character, position):
 
-        tail = self.sub_pattern.parser(None, character)
+        tail = self.sub_pattern.parser(None, character, position)
         if not tail:
             return []
 
         if not lhs:
-            return [OneOrMoreParser(self, [], t) for t in tail]
+            return [OneOrMoreParser(self, position, [], t) for t in tail]
 
         output = []
         parent_token, right_token = None, lhs
         while right_token:
             if right_token.pattern == self:
-                output.extend(OneOrMoreParser(self, right_token.sequence, t) for t in tail)
+                output.extend(OneOrMoreParser(self, position, right_token.sequence, t) for t in tail)
             parent_token, right_token = right_token, right_token.right_token
         return output
 
 
 class OneOrMoreParser(Parser):
-    def __init__(self, pattern, prefix=None, sub_parser=None):
-        Parser.__init__(self, pattern)
+    def __init__(self, pattern, start_pos, prefix=None, sub_parser=None):
+        Parser.__init__(self, pattern, start_pos)
         self.prefix = prefix if prefix is not None else []
-        self.curr_sub_parser = sub_parser if sub_parser is not None else pattern.sub_pattern.new_parser()
+        self.curr_sub_parser = sub_parser if sub_parser is not None else pattern.sub_pattern.new_parser(start_pos)
 
     def consume(self, character, position):
         total_matches = []
@@ -251,11 +260,11 @@ class OneOrMoreParser(Parser):
             sequence = self.prefix + [match]
             total_matches.append(OneOrMoreMatch(self.pattern, sequence))
             # ...OR WE CAN ATTEMPT ANOTHER SUB_PATTERN MATCH
-            next_sub_parser = self.pattern.sub_pattern.new_parser()
-            next_parsers.append(OneOrMoreParser(self.pattern, sequence, next_sub_parser))
+            next_sub_parser = self.pattern.sub_pattern.new_parser(position)
+            next_parsers.append(OneOrMoreParser(self.pattern, position, sequence, next_sub_parser))
 
         for p in new_parsers:
-            next_parsers.append(OneOrMoreParser(self.pattern, self.prefix, p))
+            next_parsers.append(OneOrMoreParser(self.pattern, position, self.prefix, p))
 
         return total_matches, next_parsers
 
@@ -285,6 +294,9 @@ class OneOrMoreMatch(Match):
     def right_token(self):
         return self.sequence[-1]
 
+    def __str__(self):
+        return "".join(str(s) for s in self.sequence)
+
 
 class Concat(Pattern):
 
@@ -302,20 +314,14 @@ class Concat(Pattern):
                 Log.error("Expecting pattern, or dict like {'name': pattern}")
         self.names, self.sub_patterns = transpose(*(parse_pair(p) for p in sub_patterns))
 
-    def parser(self, lhs, character):
-        acc = []
-        first_patterns = self.sub_patterns[0].parser(lhs, character)
-
+    def parser(self, lhs, character, position):
         if not lhs:
-            return [ConcatParser(self, [], 0, f) for f in first_patterns]
+            first_patterns = self.sub_patterns[0].parser(lhs, character, position)
+            return [ConcatParser(self, position, [], 0, f) for f in first_patterns]
 
-        parent_token = Null
-        right_token = lhs
-        while right_token:
-            if parent_token.pattern.accept_rhs(self):
-                acc.extend(first_patterns.parser(right_token, character))
-            right_token = right_token.right_token
-        return acc
+        if self.sub_patterns[0] in lhs.patterns:
+            next_parsers = self.sub_patterns[1].parser(None, character, position)
+            return [ConcatParser(self, position, [lhs], 1, p) for p in next_parsers]
 
     def accept_rhs(self, rhs):
         last_pattern = self.sub_patterns[-1]
@@ -323,15 +329,15 @@ class Concat(Pattern):
 
 
 class ConcatParser(Parser):
-    def __init__(self, pattern, prefix_data=None, curr_index=None, curr_parser=None):
-        Parser.__init__(self, pattern)
+    def __init__(self, pattern, start_pos, prefix_data=None, curr_index=None, curr_parser=None):
+        Parser.__init__(self, pattern, start_pos)
         self.prefix = prefix_data or []
         if curr_parser is not None:
             self.curr_index = curr_index
             self.curr_parser = curr_parser
         else:
             self.curr_index = 0
-            self.curr_parser = pattern.sub_patterns[0].new_parser()
+            self.curr_parser = pattern.sub_patterns[0].new_parser(start_pos)
 
     def consume(self, character, position):
         next_parsers = []
@@ -348,6 +354,7 @@ class ConcatParser(Parser):
             for p in new_parsers:
                 next_parser = ConcatParser(
                     self.pattern,
+                    self.start,
                     self.prefix,
                     self.curr_index,
                     p
@@ -360,14 +367,16 @@ class ConcatParser(Parser):
             for m in sub_matches:
                 next_parser = ConcatParser(
                     self.pattern,
+                    self.start,
                     self.prefix + [m],
                     self.curr_index + 1,
-                    self.pattern.sub_patterns[self.curr_index + 1].new_parser()
+                    self.pattern.sub_patterns[self.curr_index + 1].new_parser(position + 1)
                 )
                 next_parsers.append(next_parser)
             for p in new_parsers:
                 next_parser = ConcatParser(
                     self.pattern,
+                    self.start,
                     self.prefix,
                     self.curr_index,
                     p
@@ -390,7 +399,7 @@ class ConcatMatch(Match):
             "sequence": seq,
             "data": {
                 n: s
-                for n, s in zip(self.pattern.names, seq)
+                for n, s in zip(self.patterns[0].names, seq)
                 if n is not None
             }
         }
@@ -407,24 +416,27 @@ class ConcatMatch(Match):
     def right_token(self):
         return self.sequence[-1]
 
+    def __str__(self):
+        return "".join(str(s) for s in self.sequence)
+
 
 class Or(Pattern):
     def __init__(self, sub_patterns):
         Pattern.__init__(self, OrParser)
         self.sub_patterns = sub_patterns
 
-    def parser(self, lhs, character):
+    def parser(self, lhs, character, position):
         if not lhs:
-            return [OrParser(self, [s for p in self.sub_patterns for s in p.parser(lhs, character)])]
+            return [OrParser(self, position, [s for p in self.sub_patterns for s in p.parser(lhs, character, position)])]
 
-        if lhs.pattern != self:
-            return []
-
-        rhs = lhs.right_token
         candidates = []
         for p in self.sub_patterns:
-            candidates.extend(p.parser(rhs, character))
-        return [OrParser(self, candidates)]
+            candidates.extend(p.parser(lhs, character, position))
+
+        if not candidates:
+            return []
+        else:
+            return [OrParser(self, position, candidates)]
 
     def accept_rhs(self, rhs):
         return any(p.accept_rhs(rhs) for p in self.sub_patterns)
@@ -432,10 +444,10 @@ class Or(Pattern):
 
 class OrParser(Parser):
 
-    def __init__(self, pattern, sub_parsers=None):
-        Parser.__init__(self, pattern)
+    def __init__(self, pattern, start_pos, sub_parsers=None):
+        Parser.__init__(self, pattern, start_pos)
         if sub_parsers is None:
-            self.sub_parsers = [p.new_parser() for p in self.pattern.sub_patterns]
+            self.sub_parsers = [p.new_parser(start_pos) for p in self.pattern.sub_patterns]
         else:
             self.sub_parsers = sub_parsers
 
@@ -444,30 +456,13 @@ class OrParser(Parser):
         next_parsers = []
         for p in self.sub_parsers:
             matches, new_parsers = p.consume(character, position)
-            total_matches.extend(OrMatch(self.pattern, m) for m in matches)
-            next_parsers.extend(OrParser(self.pattern, [p]) for p in new_parsers)
+            for m in matches:
+                m.patterns.append(self.pattern)
+            total_matches.extend(matches)
+            if new_parsers:
+                next_parsers.append(OrParser(self.pattern, self.start, new_parsers))
 
         return total_matches, next_parsers
-
-
-class OrMatch(Match):
-
-    def __init__(self, pattern, sub_match):
-        Match.__init__(self, pattern)
-        self.sub_match = sub_match
-
-
-    @property
-    def start(self):
-        return self.sub_match.start
-
-    @property
-    def stop(self):
-        return self.sub_match.stop
-
-    @property
-    def right_token(self):
-        return self.sub_match
 
 
 class Forward(Pattern):
@@ -475,7 +470,7 @@ class Forward(Pattern):
     def __init__(self):
         Pattern.__init__(self, ForwardParser)
         self.sub_pattern = Null
-        self.in_use = False
+        self.in_use = set()  # STOP RECURSIVE LOOPS
 
     def __lshift__(self, sub_pattern):
         if self.sub_pattern:
@@ -483,73 +478,68 @@ class Forward(Pattern):
         else:
             self.sub_pattern = sub_pattern
 
-    def parser(self, lhs, character):
+    def parser(self, lhs, character, position):
 
         acc = []
         right_token = lhs
         while right_token:
-            if right_token.pattern == self:
-                acc.extend(self.sub_pattern.parser(right_token.right_token, character))
+            if self in right_token.patterns:
+                acc.extend(self.sub_pattern.parser(right_token.right_token, character, position))
             right_token = right_token.right_token
 
-        if self.in_use:
-            return [ForwardParser(self)]
+        if position in self.in_use:
+            return [ForwardParser(self, position)]
 
-        with self:
-            return [ForwardParser(self, p) for p in self.sub_pattern.parser(lhs, character)]
+        with self.at(position):
+            return [ForwardParser(self, position, p) for p in self.sub_pattern.parser(lhs, character, position)]
+
+    def at(self, position):
+        return LimitUsage(self.in_use, position)
+
+
+class LimitUsage(object):
+    def __init__(self, in_use, position):
+        self.in_use = in_use
+        self.position = position
 
     def __enter__(self):
-        if self.in_use:
+        if self.position in self.in_use:
             Log.error("not allowed")
-        self.in_use = True
+        self.in_use.add(self.position)
 
     def __exit__(self, a, b, c):
-        self.in_use = False
+        self.in_use.remove(self.position)
 
 
 class ForwardParser(Parser):
 
-    def __init__(self, pattern, sub_parser=None, matches=None):
-        Parser.__init__(self, pattern)
+    def __init__(self, pattern, start_pos, sub_parser=None, matches=None):
+        Parser.__init__(self, pattern, start_pos)
         self.sub_parser = sub_parser
         self.sub_matches = matches or []
 
     def consume(self, character, position):
         if self.sub_parser is None:
-            return Null, Null
+            if position in self.pattern.in_use:
+                return Null, Null
 
-        new_sub_parsers = [self.sub_parser]
-        for m in self.sub_matches:
-            new_sub_parsers.extend(self.pattern.sub_pattern.parser(m, character))
+            self.sub_parser = self.pattern.sub_pattern.new_parser(position)
 
-        new_matches = []
-        new_parsers = []
-        for s in new_sub_parsers:
-            m, p = s.consume(character, position)
-            new_matches.extend(ForwardMatch(self.pattern, mm) for mm in m)
-            new_parsers.extend(ForwardParser(self.pattern, pp, m) for pp in p)
+        with self.pattern.at(self.start):
+            new_sub_parsers = [self.sub_parser]
+            for m in self.sub_matches:
+                new_sub_parsers.extend(self.pattern.sub_pattern.parser(m, character, position))
+            # MATCHES EXIST ANY MANY LEVELS OF PARSERS, EACH MATCH SHOULD LIST THE HIERARCHY OF PARSERS THAT MATCHED IT
+            new_matches = []
+            new_parsers = []
+            for s in new_sub_parsers:
+                m, p = s.consume(character, position)
+                for mm in m:
+                    mm.patterns.append(self.pattern)
+                new_matches.extend(m)
+                new_parsers.extend(ForwardParser(self.pattern, self.start, pp, m) for pp in p)
 
-        return new_matches, new_parsers
-
-
-class ForwardMatch(Match):
-
-    def __init__(self, pattern, sub_match):
-        Match.__init__(self, pattern)
-        self.sub_match = sub_match
-
-    @property
-    def start(self):
-        return self.sub_match.start
-
-    @property
-    def stop(self):
-        return self.sub_match.stop
-
-    @property
-    def right_token(self):
-        return self.sub_match
-
+            return new_matches, new_parsers
 
 
 # SOME SHORTCUTS
@@ -563,7 +553,7 @@ def Whitespace():
 
 def parse(pattern, data):
     # ONLY RETURN MATCHES THAT CONSUME ALL data
-    parsers = pattern.parser(None, data[0])
+    parsers = pattern.parser(None, data[0], 0)
     matches = []
     for i, d in enumerate(data):
         next_parsers = []

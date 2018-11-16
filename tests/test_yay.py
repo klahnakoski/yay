@@ -13,6 +13,7 @@ from __future__ import unicode_literals
 
 from unittest import skip
 
+from mo_json import value2json
 from mo_testing.fuzzytestcase import FuzzyTestCase
 
 from yay import Characters, Literal, parse, Or, letters, OneOrMore, Word, Concat, Whitespace, Forward, digits
@@ -102,16 +103,59 @@ class Test_YAY(FuzzyTestCase):
             ]
         )
 
+    def test_forward_simple(self):
+        expr = Forward()
+        sample = Or([
+            OneOrMore(Characters(digits)),
+            Concat([{"left": expr}, {"op": Literal("+")}, {"right": expr}]),
+        ])
+        expr << sample
+
+        result = parse(expr, "2")
+        expected = [{"start": 0, "stop": 1, "sequence": [
+            {"start": 0, "stop": 1, "data": "2"}
+        ]}]
+        self.assertEqual(result, expected)
+
     def test_forward(self):
         expr = Forward()
         sample = Or([
             OneOrMore(Characters(digits)),
-            Concat([{"left": expr}, Whitespace(), {"op": Literal("+")}, Whitespace(), {"right": expr}]),
+            Concat([{"left": expr}, {"op": Literal("+")}, {"right": expr}]),
         ])
         expr << sample
-
+        _ = value2json
         result = parse(expr, "2+4")
-        expected = {"left": "2", "right": "4"}
+        expected = [{
+            "data": {
+                "left": {
+                    "sequence": [{"data": "2", "start": 0, "stop": 1}],
+                    "start": 0,
+                    "stop": 1
+                },
+                "op": {"literal": "+", "start": 1, "stop": 2},
+                "right": {
+                    "sequence": [{"data": "4", "start": 2, "stop": 3}],
+                    "start": 2,
+                    "stop": 3
+                }
+            },
+            "sequence": [
+                {
+                    "sequence": [{"data": "2", "start": 0, "stop": 1}],
+                    "start": 0,
+                    "stop": 1
+                },
+                {"literal": "+", "start": 1, "stop": 2},
+                {
+                    "sequence": [{"data": "4", "start": 2, "stop": 3}],
+                    "start": 2,
+                    "stop": 3
+                }
+            ],
+            "start": 0,
+            "stop": 3
+        }]
         self.assertEqual(result, expected)
 
     def test_operators(self):
@@ -123,6 +167,6 @@ class Test_YAY(FuzzyTestCase):
         ])
         expr << sample
 
-        result = parse(expr, "2+4*3")
+        result = parse(expr, "2 + 4 * 3")
         expected = {"left": "2", "right": {"left": "4", "right": "3"}}
         self.assertEqual(result, expected)

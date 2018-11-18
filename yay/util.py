@@ -39,3 +39,10 @@ class LimitUsage(object):
 
     def __exit__(self, a, b, c):
         self.in_use.remove(self.position)
+
+
+class Expecting(object):
+
+    def __init__(self, value, position):
+        self.value = value
+        self.position = position

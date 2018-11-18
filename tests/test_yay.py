@@ -15,7 +15,9 @@ from mo_dots import wrap
 from mo_json import value2json
 from mo_testing.fuzzytestcase import FuzzyTestCase
 
-from yay import Characters, Literal, parse, Or, letters, OneOrMore, Word, Concat, Whitespace, Forward, digits, text
+from yay import parse, Word, Whitespace, text
+from yay.patterns import Characters, Literal, Or, OneOrMore, Concat, Forward
+from yay.util import letters, digits
 
 
 class Test_YAY(FuzzyTestCase):
@@ -103,7 +105,7 @@ class Test_YAY(FuzzyTestCase):
         )
 
     def test_forward_simple(self):
-        expr = Forward()
+        expr = Forward("expr")
         sample = Or([
             OneOrMore(Characters(digits)),
             Concat([{"left": expr}, {"op": Literal("+")}, {"right": expr}]),
@@ -117,7 +119,7 @@ class Test_YAY(FuzzyTestCase):
         self.assertEqual(result, expected)
 
     def test_forward(self):
-        expr = Forward()
+        expr = Forward("expr")
         sample = Or([
             OneOrMore(Characters(digits)),
             Concat([{"left": expr}, {"op": Literal("+")}, {"right": expr}]),
@@ -158,7 +160,7 @@ class Test_YAY(FuzzyTestCase):
         self.assertEqual(result, expected)
 
     def test_operators(self):
-        expr = Forward()
+        expr = Forward("expr")
         sample = Or([
             OneOrMore(Characters(digits)).post_process(text),
             Concat([{"left": expr}, Whitespace(), {"op": Literal("*")}, Whitespace(), {"right": expr}]),
@@ -179,3 +181,25 @@ class Test_YAY(FuzzyTestCase):
         self.assertEqual(result[1].data.left.data.right.sequence[0].data, "4")
         self.assertEqual(result[1].data.op.literal, "*")
         self.assertEqual(result[1].data.right.sequence[0].data, "3")
+
+    def test_operators_ordered(self):
+        term = Forward("term")
+        term << Or([
+            OneOrMore(Characters(digits)).post_process(text),
+            Concat([{"left": term}, Whitespace(), {"op": Literal("*")}, Whitespace(), {"right": term}]),
+        ])
+
+        expr = Forward("expr")
+        expr << Or([
+            term,
+            Concat([{"left": expr}, Whitespace(), {"op": Literal("+")}, Whitespace(), {"right": expr}]),
+        ])
+
+        result = wrap(parse(expr, "2 + 4 * 3"))
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].data.left.sequence[0].data, "2")
+        self.assertEqual(result[0].data.op.literal, "+")
+        self.assertEqual(result[0].data.right.data.left.sequence[0].data, "4")
+        self.assertEqual(result[0].data.right.data.op.literal, "*")
+        self.assertEqual(result[0].data.right.data.right.sequence[0].data, "3")

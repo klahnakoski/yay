@@ -24,8 +24,8 @@ from yay.parsers import (
     CharactersParser,
     OneOrMoreParser,
     ConcatParser,
-    OrParser,
     ForwardParser,
+    OrParser,
 )
 
 

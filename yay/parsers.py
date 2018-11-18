@@ -13,6 +13,7 @@ from __future__ import unicode_literals
 
 from mo_dots import Null
 from mo_future import unichr
+from mo_logs.strings import quote
 
 from yay.matches import LiteralMatch, CharacterMatch, OneOrMoreMatch, ConcatMatch
 
@@ -52,6 +53,8 @@ class LiteralParser(Parser):
             self.index += 1
             return Null, Null
 
+    def __str__(self):
+        return str("Parse ") + quote(self.pattern.value[self.index]) + str(" in ") + quote(self.pattern)
 
 NO_CHAR = unichr(0)
 
@@ -67,6 +70,9 @@ class CharactersParser(Parser):
             return [CharacterMatch(self.pattern, character, position)], Null
         else:
             return Null, Null
+
+    def __str__(self):
+        return str("one of ") + quote(self.pattern)
 
 
 class OneOrMoreParser(Parser):
@@ -99,6 +105,9 @@ class OneOrMoreParser(Parser):
             next_parsers.append(OneOrMoreParser(self.pattern, position, self.prefix, p))
 
         return total_matches, next_parsers
+
+    def __str__(self):
+        return str("(") + str(self.curr_sub_parser) + str(") in ") + str(self.pattern)
 
 
 class ConcatParser(Parser):
@@ -149,6 +158,9 @@ class ConcatParser(Parser):
                 )
                 next_parsers.append(next_parser)
             return Null, next_parsers
+
+    def __str__(self):
+        return str("(") + str(self.curr_parser) + str(") in ") + str(self.pattern)
 
 
 class OrParser(Parser):

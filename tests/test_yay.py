@@ -172,17 +172,17 @@ class Test_YAY(FuzzyTestCase):
 
         result = wrap(parse(expr, "2 + 4 * 3"))
 
-        self.assertEqual(result[0].data.left.sequence[0].data, "2")
-        self.assertEqual(result[0].data.op.literal, "+")
-        self.assertEqual(result[0].data.right.data.left.sequence[0].data, "4")
-        self.assertEqual(result[0].data.right.data.op.literal, "*")
-        self.assertEqual(result[0].data.right.data.right.sequence[0].data, "3")
+        self.assertEqual(result[1].data.left.sequence[0].data, "2")
+        self.assertEqual(result[1].data.op.literal, "+")
+        self.assertEqual(result[1].data.right.data.left.sequence[0].data, "4")
+        self.assertEqual(result[1].data.right.data.op.literal, "*")
+        self.assertEqual(result[1].data.right.data.right.sequence[0].data, "3")
 
-        self.assertEqual(result[1].data.left.data.left.sequence[0].data, "2")
-        self.assertEqual(result[1].data.left.data.op.literal, "+")
-        self.assertEqual(result[1].data.left.data.right.sequence[0].data, "4")
-        self.assertEqual(result[1].data.op.literal, "*")
-        self.assertEqual(result[1].data.right.sequence[0].data, "3")
+        self.assertEqual(result[0].data.left.data.left.sequence[0].data, "2")
+        self.assertEqual(result[0].data.left.data.op.literal, "+")
+        self.assertEqual(result[0].data.left.data.right.sequence[0].data, "4")
+        self.assertEqual(result[0].data.op.literal, "*")
+        self.assertEqual(result[0].data.right.sequence[0].data, "3")
 
     @skip("broken")
     def test_operators_ordered(self):

@@ -167,7 +167,16 @@ class ConcatParser(Parser):
             return Null, next_parsers
 
     def __str__(self):
-        return str("(") + str(self.curr_parser) + str(") ") + str(self.curr_index) + (" of ") + str(len(self.pattern.sub_patterns)) + (" in ") + str(self.pattern)
+        return (
+            str("(")
+            + str(self.curr_parser)
+            + str(") ")
+            + str(self.curr_index)
+            + (" of ")
+            + str(len(self.pattern.sub_patterns))
+            + (" in ")
+            + str(self.pattern)
+        )
 
 
 class OrParser(Parser):
@@ -195,55 +204,46 @@ class OrParser(Parser):
 
 
 class ForwardParser(Parser):
-    def __init__(self, pattern, start_pos, sub_parser=None, lhs=None):
+    def __init__(self, pattern, start_pos, sub_parser):
         Parser.__init__(self, pattern, start_pos)
         self.sub_parser = sub_parser
-        self.lhs = lhs
 
     def consume(self, character, position):
-        if not self.sub_parser:
-            # THIS PARSER HAS NOT BEEN INITAILIZED (TO PREVENT RECURSIVE LOOPS)
-            if not self.lhs:
-                start = self.start = position
-            else:
-                start = self.start = self.lhs.start
-
-            if start in self.pattern.in_use:
-                return Null, Null
-
-            new_sub_parsers = self.pattern.sub_pattern.parser(
-                self.lhs, character, position
-            )
-            if len(new_sub_parsers) != 1:
-                Log.error("do not know how to hanlde")
-            self.sub_parser = new_sub_parsers[0]
-            self.lhs = None
-        else:
-            if self.start in self.pattern.in_use:
-                return Null, Null
-
-            if not self.lhs:
-                new_sub_parsers = [self.sub_parser]
-            else:
-                new_sub_parsers = self.pattern.sub_pattern.parser(
-                    self.lhs, character, position
-                )
+        if self.start in self.pattern.in_use:
+            return Null, Null
 
         with self.pattern.at(self.start):
             # MATCHES EXIST ANY MANY LEVELS OF PARSERS, EACH MATCH SHOULD LIST THE HIERARCHY OF PARSERS THAT MATCHED IT
-            new_matches = []
-            new_parsers = []
-            for s in new_sub_parsers:
-                m, p = s.consume(character, position)
-                new_matches.extend(m)
-                for mm in m:
-                    mm.patterns.append(self.pattern)
-                    new_parsers.append(
-                        ForwardParser(self.pattern, self.start, None, mm)
-                    )
+            total_parsers = []
+            new_matches, new_parsers = self.sub_parser.consume(character, position)
+            for mm in new_matches:
+                mm.patterns.append(self.pattern)
+                total_parsers.append(ForwardPlaceholder(self.pattern, self.start, mm))
 
-                new_parsers.extend(
-                    ForwardParser(self.pattern, self.start, pp, None) for pp in p
-                )
+            total_parsers.extend(
+                ForwardParser(self.pattern, self.start, pp) for pp in new_parsers
+            )
 
-            return new_matches, new_parsers
+            return new_matches, total_parsers
+
+
+class ForwardPlaceholder(Parser):
+    def __init__(self, pattern, start_pos, lhs=None):
+        Parser.__init__(self, pattern, start_pos)
+        self.lhs = lhs  # None IMPLIES FRESH PLACEHOLDER
+
+    def consume(self, character, position):
+        # THIS PARSER HAS NOT BEEN INITAILIZED (TO PREVENT RECURSIVE LOOPS)
+        if self.lhs is None:
+            start = self.start = position
+        else:
+            start = self.start = self.lhs.start
+
+        if self.start in self.pattern.in_use:
+            return Null, Null
+
+        return ForwardParser(
+            self.pattern,
+            start,
+            self.pattern.sub_pattern.parser(self.lhs, character, position)[0],
+        ).consume(character, position)

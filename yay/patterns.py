@@ -26,7 +26,7 @@ from yay.parsers import (
     ConcatParser,
     ForwardParser,
     OrParser,
-)
+    ForwardPlaceholder)
 
 
 class Pattern(object):
@@ -230,7 +230,7 @@ class Or(Pattern):
 
 class Forward(Pattern):
     def __init__(self, name):
-        Pattern.__init__(self, ForwardParser)
+        Pattern.__init__(self, ForwardPlaceholder)
         self.name = name
         self.sub_pattern = Null
         self.in_use = set()  # STOP RECURSIVE LOOPS
@@ -255,7 +255,7 @@ class Forward(Pattern):
             right_token = right_token.right_token
 
         if position in self.in_use:
-            return [ForwardParser(self, position)]
+            return [ForwardPlaceholder(self, position, lhs)]
 
         with self.at(position):
             return [

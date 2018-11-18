@@ -184,7 +184,7 @@ class Test_YAY(FuzzyTestCase):
         self.assertEqual(result[0].data.op.literal, "*")
         self.assertEqual(result[0].data.right.sequence[0].data, "3")
 
-    @skip("broken")
+    # @skip("broken")
     def test_operators_ordered(self):
         term = Forward("term")
         term << Or([

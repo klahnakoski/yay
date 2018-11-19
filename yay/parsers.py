@@ -231,12 +231,16 @@ class OrParser(Parser):
                 m.patterns.append(self.pattern)
             total_matches.extend(matches)
             next_parsers.extend(new_parsers)
-            all_expecting.extend(ExpectingCompound(p.pattern, e) for e in expecting)
+            all_expecting.extend(expecting)
 
         if next_parsers:
             next_parsers = [OrParser(self.pattern, self.start, next_parsers)]
         elif not total_matches:
-            return Nothing, Nothing, all_expecting
+            return (
+                Nothing,
+                Nothing,
+                [ExpectingCompound(self.pattern, e) for e in all_expecting],
+            )
 
         return total_matches, next_parsers, Nothing
 
@@ -248,7 +252,11 @@ class ForwardParser(Parser):
 
     def consume(self, character, position):
         if self.start in self.pattern.in_use:
-            return Nothing, Nothing, [ExpectingCompound(self.pattern, ExpectingCharacter(None, self.start))]
+            return (
+                Nothing,
+                Nothing,
+                [ExpectingCompound(self.pattern, ExpectingCharacter(None, self.start))],
+            )
 
         with self.pattern.at(self.start):
             # MATCHES EXIST ANY MANY LEVELS OF PARSERS, EACH MATCH SHOULD LIST THE HIERARCHY OF PARSERS THAT MATCHED IT

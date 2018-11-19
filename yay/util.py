@@ -26,6 +26,8 @@ octdigits = "01234567"
 punctuation = """!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~"""
 printable = digits + letters + punctuation + whitespace
 
+Nothing = []
+
 
 class LimitUsage(object):
     def __init__(self, in_use, position):
@@ -41,8 +43,15 @@ class LimitUsage(object):
         self.in_use.remove(self.position)
 
 
-class Expecting(object):
+class ExpectingCharacter(object):
 
     def __init__(self, value, position):
         self.value = value
         self.position = position
+
+
+class ExpectingCompound(object):
+
+    def __init__(self, pattern, cause):
+        self.pattern = pattern
+        self.cause = cause

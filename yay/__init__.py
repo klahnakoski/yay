@@ -41,7 +41,7 @@ def parse(pattern, data):
         next_parsers = []
         matches = []
         for p in parsers:
-            new_matches, new_parsers = p.consume(d, i)
+            new_matches, new_parsers, expecting = p.consume(d, i)
             matches.extend(new_matches)
             next_parsers.extend(new_parsers)
         parsers = next_parsers

@@ -11,12 +11,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import unicode_literals
 
-from mo_dots import Null
 from mo_future import unichr
 from mo_logs import Log
 from mo_logs.strings import quote
 
 from yay.matches import LiteralMatch, CharacterMatch, OneOrMoreMatch, ConcatMatch
+from yay.util import Nothing, ExpectingCompound, ExpectingCharacter
 
 
 class Parser(object):
@@ -32,27 +32,29 @@ class LiteralParser(Parser):
     def __init__(self, pattern, start_pos, index=0):
         Parser.__init__(self, pattern, start_pos)
         self.index = index
-        self.start_pos = -1
 
     def consume(self, character, position):
-        if self.index == 0:
-            self.start_pos = position
-        if character == self.pattern.value[self.index]:
-            self.index += 1
+        expecting = self.pattern.value[self.index]
+        self.index += 1
+        if character == expecting:
             if self.index == len(self.pattern.value):
                 return (
-                    [
-                        LiteralMatch(
-                            self.pattern, self.start_pos, self.start_pos + self.index
-                        )
-                    ],
-                    [],
+                    [LiteralMatch(self.pattern, self.start, self.start + self.index)],
+                    Nothing,
+                    Nothing,
                 )
             else:
-                return Null, [self]
+                return Nothing, [self], Nothing
         else:
-            self.index += 1
-            return Null, Null
+            return (
+                Nothing,
+                Nothing,
+                [
+                    ExpectingCompound(
+                        self.pattern, ExpectingCharacter(expecting, position)
+                    )
+                ],
+            )
 
     def __str__(self):
         return (
@@ -74,9 +76,13 @@ class CharactersParser(Parser):
 
     def consume(self, character, position):
         if character in self.pattern.allowed_chars:
-            return [CharacterMatch(self.pattern, character, position)], Null
+            return [CharacterMatch(self.pattern, character, position)], Nothing, Nothing
         else:
-            return Null, Null
+            return (
+                Nothing,
+                Nothing,
+                [ExpectingCharacter(self.pattern.allowed_chars, position)],
+            )
 
     def __str__(self):
         return str("one of ") + quote(self.pattern)
@@ -96,7 +102,15 @@ class OneOrMoreParser(Parser):
         total_matches = []
         next_parsers = []
 
-        matches, new_parsers = self.curr_sub_parser.consume(character, position)
+        matches, new_parsers, expecting = self.curr_sub_parser.consume(
+            character, position
+        )
+
+        if not matches and not new_parsers:
+            if not expecting:
+                Log.error("not expected")
+            else:
+                return Nothing, Nothing, expecting
 
         for match in matches:
             # FOR EACH MATCH, THIS IS DONE
@@ -111,7 +125,7 @@ class OneOrMoreParser(Parser):
         for p in new_parsers:
             next_parsers.append(OneOrMoreParser(self.pattern, position, self.prefix, p))
 
-        return total_matches, next_parsers
+        return total_matches, next_parsers, Nothing
 
     def __str__(self):
         return str("(") + str(self.curr_sub_parser) + str(") in ") + str(self.pattern)
@@ -132,7 +146,9 @@ class ConcatParser(Parser):
 
     def consume(self, character, position):
         next_parsers = []
-        sub_matches, new_parsers = self.curr_parser.consume(character, position)
+        sub_matches, new_parsers, expecting = self.curr_parser.consume(
+            character, position
+        )
 
         if self.curr_index == len(self.pattern.sub_patterns) - 1:
             # THE LAST MATCH WILl RETURN THE CONCATENATED MATCH, AND ANY OTHER STILL-VALID PARSERS
@@ -145,7 +161,14 @@ class ConcatParser(Parser):
                 )
                 next_parsers.append(next_parser)
 
-            return total_matches, next_parsers
+            if not total_matches and not next_parsers:
+                return (
+                    Nothing,
+                    Nothing,
+                    [ExpectingCompound(self.pattern, e) for e in expecting],
+                )
+
+            return total_matches, next_parsers, Nothing
         else:
             # EVERY MATCH WILL TRIGGER A COPY OF self, ADVANCED TO THE NEXT IN THE SERIES
             for m in sub_matches:
@@ -164,7 +187,15 @@ class ConcatParser(Parser):
                     self.pattern, self.start, self.prefix, self.curr_index, p
                 )
                 next_parsers.append(next_parser)
-            return Null, next_parsers
+
+            if not next_parsers:
+                return (
+                    Nothing,
+                    Nothing,
+                    [ExpectingCompound(self.pattern, e) for e in expecting],
+                )
+
+            return Nothing, next_parsers, Nothing
 
     def __str__(self):
         return (
@@ -192,15 +223,22 @@ class OrParser(Parser):
     def consume(self, character, position):
         total_matches = []
         next_parsers = []
+        all_expecting = []
+
         for p in self.sub_parsers:
-            matches, new_parsers = p.consume(character, position)
+            matches, new_parsers, expecting = p.consume(character, position)
             for m in matches:
                 m.patterns.append(self.pattern)
             total_matches.extend(matches)
             next_parsers.extend(new_parsers)
+            all_expecting.extend(ExpectingCompound(p.pattern, e) for e in expecting)
+
         if next_parsers:
             next_parsers = [OrParser(self.pattern, self.start, next_parsers)]
-        return total_matches, next_parsers
+        elif not total_matches:
+            return Nothing, Nothing, all_expecting
+
+        return total_matches, next_parsers, Nothing
 
 
 class ForwardParser(Parser):
@@ -210,12 +248,14 @@ class ForwardParser(Parser):
 
     def consume(self, character, position):
         if self.start in self.pattern.in_use:
-            return Null, Null
+            return Nothing, Nothing, [ExpectingCompound(self.pattern, ExpectingCharacter(None, self.start))]
 
         with self.pattern.at(self.start):
             # MATCHES EXIST ANY MANY LEVELS OF PARSERS, EACH MATCH SHOULD LIST THE HIERARCHY OF PARSERS THAT MATCHED IT
             total_parsers = []
-            new_matches, new_parsers = self.sub_parser.consume(character, position)
+            new_matches, new_parsers, expecting = self.sub_parser.consume(
+                character, position
+            )
             for mm in new_matches:
                 mm.patterns.append(self.pattern)
                 total_parsers.append(ForwardPlaceholder(self.pattern, self.start, mm))
@@ -224,7 +264,14 @@ class ForwardParser(Parser):
                 ForwardParser(self.pattern, self.start, pp) for pp in new_parsers
             )
 
-            return new_matches, total_parsers
+            if not new_matches and not total_parsers:
+                return (
+                    Nothing,
+                    Nothing,
+                    [ExpectingCompound(self.pattern, e) for e in expecting],
+                )
+
+            return new_matches, total_parsers, Nothing
 
 
 class ForwardPlaceholder(Parser):
@@ -238,9 +285,6 @@ class ForwardPlaceholder(Parser):
             start = self.start = position
         else:
             start = self.start = self.lhs.start
-
-        if self.start in self.pattern.in_use:
-            return Null, Null
 
         return ForwardParser(
             self.pattern,
